@@ -5,6 +5,7 @@ from .adapters import (
     ModelAdapter,
     Qwen2_5_VLAdapter,
     get_adapter,
+    register_adapter,
 )
 from .image_utils import (
     image_token_positions,
@@ -26,6 +27,7 @@ __all__ = [
     "Qwen2_5_VLAdapter",
     "InternVLAdapter",
     "get_adapter",
+    "register_adapter",
     # image helpers
     "image_token_positions",
     "mask_to_token_indices",
