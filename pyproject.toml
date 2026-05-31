@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "actpatch"
+version = "0.1.0"
+description = "Activation patching for Vision-Language Models (Qwen2.5-VL, InternVL 3.5)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Aquasar" }]
+dependencies = [
+    "torch>=2.0",
+    "transformers>=4.46",
+    "pillow",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: end-to-end test that loads a real VLM (opt in via ACTPATCH_RUN_E2E=1).",
+]
