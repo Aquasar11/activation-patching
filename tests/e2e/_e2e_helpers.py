@@ -19,8 +19,8 @@ Run with:
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
 
 import pytest
 import torch
@@ -48,7 +48,7 @@ def require_torchvision() -> None:
         )
 
 
-def centered_grid_mask(grid_shape: Tuple[int, int], pad_fraction: float = 0.2) -> torch.Tensor:
+def centered_grid_mask(grid_shape: tuple[int, int], pad_fraction: float = 0.2) -> torch.Tensor:
     """Return a 2D bool mask covering the centre of the grid.
 
     `pad_fraction` is the fraction of cells trimmed from each border. With the
@@ -76,7 +76,7 @@ def contains_target_word(text: str, candidates: Iterable[str]) -> bool:
     return any(c in low for c in candidates)
 
 
-def first_match_rank(pairs: List[Tuple[str, float]], words: Iterable[str]) -> Optional[int]:
+def first_match_rank(pairs: list[tuple[str, float]], words: Iterable[str]) -> int | None:
     """Return the 0-based rank of the first token whose text contains any of `words`."""
     words = tuple(w.lower() for w in words)
     for rank, (text, _) in enumerate(pairs):

@@ -13,8 +13,6 @@ know about model-specific spatial-merge factors.
 """
 from __future__ import annotations
 
-from typing import List, Sequence, Tuple
-
 import torch
 
 
@@ -31,8 +29,8 @@ def image_token_positions(input_ids: torch.Tensor, image_token_id: int) -> torch
         raise ValueError(f"input_ids must be 1D or 2D, got shape {tuple(input_ids.shape)}")
 
     masks = input_ids == image_token_id
-    # Require identical positions across the batch.
-    if masks.shape[0] > 1 and not torch.equal(masks[0], masks[1]):
+    # Require identical positions across every row of the batch.
+    if masks.shape[0] > 1 and not bool((masks == masks[0]).all()):
         raise ValueError(
             "image_token_positions requires the same image-token positions across "
             "the batch dimension. Got differing rows in input_ids."
@@ -43,9 +41,9 @@ def image_token_positions(input_ids: torch.Tensor, image_token_id: int) -> torch
 def mask_to_token_indices(
     mask_2d: torch.Tensor,
     positions: torch.Tensor,
-    grid_shape: Tuple[int, int],
+    grid_shape: tuple[int, int],
     order: str = "row_major",
-) -> List[int]:
+) -> list[int]:
     """Map a 2D bool grid onto absolute sequence positions of image tokens.
 
     Args:
@@ -79,7 +77,9 @@ def mask_to_token_indices(
     return sorted(int(x) for x in selected.tolist())
 
 
-def rect_mask(grid_shape: Tuple[int, int], top: int, left: int, bottom: int, right: int) -> torch.Tensor:
+def rect_mask(
+    grid_shape: tuple[int, int], top: int, left: int, bottom: int, right: int
+) -> torch.Tensor:
     """Convenience: build a 2D bool mask with a rectangular True region.
 
     Half-open on the right/bottom edges, like Python slicing.

@@ -9,7 +9,8 @@ New models need only a ~30-line adapter.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Mapping, Protocol, Tuple, runtime_checkable
+from collections.abc import Mapping
+from typing import Protocol, runtime_checkable
 
 from torch import nn
 
@@ -22,10 +23,10 @@ logger = get_logger(__name__)
 class ModelAdapter(Protocol):
     """Protocol implemented by model-specific adapters."""
 
-    def get_decoder_layers(self, model: nn.Module) -> List[nn.Module]:
+    def get_decoder_layers(self, model: nn.Module) -> list[nn.Module]:
         """Return the list of LLM decoder-block modules in order."""
 
-    def get_attn_kv_projs(self, layer: nn.Module) -> Tuple[nn.Module, nn.Module]:
+    def get_attn_kv_projs(self, layer: nn.Module) -> tuple[nn.Module, nn.Module]:
         """Return `(k_proj, v_proj)` for the layer's self-attention module."""
 
     def get_image_token_id(self, model: nn.Module) -> int:
@@ -35,7 +36,7 @@ class ModelAdapter(Protocol):
 
     def head_dim(self, model: nn.Module) -> int: ...
 
-    def image_grid_shape(self, inputs: Mapping[str, object], model: nn.Module) -> Tuple[int, int]:
+    def image_grid_shape(self, inputs: Mapping[str, object], model: nn.Module) -> tuple[int, int]:
         """Return the post-merge `(H_grid, W_grid)` for a single-image input.
 
         Used by `mask_to_token_indices` to validate user-supplied 2D masks.
@@ -52,7 +53,7 @@ def _attr_path(obj, path: str):
     return cur
 
 
-def resolve_decoder_layers(model, candidates: Tuple[str, ...]) -> Tuple[List[nn.Module], str]:
+def resolve_decoder_layers(model, candidates: tuple[str, ...]) -> tuple[list[nn.Module], str]:
     """Find the LLM decoder-layer list by trying candidate attribute paths.
 
     A path is accepted only if it yields a non-empty module list whose first

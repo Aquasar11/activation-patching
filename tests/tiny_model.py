@@ -18,7 +18,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import List, Optional
 
 import torch
 from torch import nn
@@ -27,7 +26,7 @@ from torch import nn
 @dataclass
 class TinyOutputs:
     logits: torch.Tensor
-    past_key_values: Optional[object] = None
+    past_key_values: object | None = None
 
 
 class TinyAttention(nn.Module):
@@ -45,11 +44,11 @@ class TinyAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
         past_key_values=None,
         use_cache: bool = False,
-        cache_position: Optional[torch.Tensor] = None,
+        cache_position: torch.Tensor | None = None,
     ) -> torch.Tensor:
         B, T, _ = hidden_states.shape
         q = self.q_proj(hidden_states).view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
@@ -110,11 +109,11 @@ class TinyDecoderLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
         past_key_values=None,
         use_cache: bool = False,
-        cache_position: Optional[torch.Tensor] = None,
+        cache_position: torch.Tensor | None = None,
     ):
         residual = hidden_states
         h = self.input_layernorm(hidden_states)
@@ -168,13 +167,13 @@ class TinyVLM(nn.Module):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
         past_key_values=None,
         use_cache: bool = False,
-        cache_position: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        cache_position: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
     ) -> TinyOutputs:
         if inputs_embeds is None:
             if input_ids is None:
@@ -208,7 +207,7 @@ class TinyVLM(nn.Module):
 class TinyAdapter:
     """Minimal `ModelAdapter` implementation for `TinyVLM`."""
 
-    def get_decoder_layers(self, model: TinyVLM) -> List[nn.Module]:
+    def get_decoder_layers(self, model: TinyVLM) -> list[nn.Module]:
         return list(model.layers)
 
     def get_attn_kv_projs(self, layer: TinyDecoderLayer):

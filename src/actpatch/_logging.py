@@ -15,7 +15,6 @@ Every module fetches its logger via `get_logger(__name__)`, all sharing the
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 # Root logger for the whole package. A NullHandler keeps us silent until the
 # host app (or `enable_debug_logging`) attaches a real handler.
@@ -36,7 +35,7 @@ def get_logger(name: str) -> logging.Logger:
 def enable_debug_logging(
     level: int = logging.DEBUG,
     stream=None,
-    fmt: Optional[str] = None,
+    fmt: str | None = None,
 ) -> logging.Logger:
     """Attach a StreamHandler to the `actpatch` logger and set its level.
 

@@ -15,10 +15,12 @@ dependencies = [
     "torchvision==0.25.0",
     "transformers==5.9.0",
     "pillow",
+    "accelerate==1.13.0",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "ruff>=0.6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -28,3 +30,14 @@ testpaths = ["tests"]
 markers = [
     "slow: end-to-end test that loads a real VLM (opt in via ACTPATCH_RUN_E2E=1).",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# pycodestyle (E/W), pyflakes (F), isort (I), bugbear (B), pyupgrade (UP),
+# comprehensions (C4). Naming (N) is intentionally omitted: this code uses
+# math conventions (T, H, W, K, V) that the naming rules would flag.
+select = ["E", "W", "F", "I", "B", "UP", "C4"]

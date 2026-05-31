@@ -8,12 +8,11 @@ The adapter introspects on construction and caches the chosen attribute path.
 """
 from __future__ import annotations
 
-from typing import List, Mapping, Tuple
+from collections.abc import Mapping
 
 from torch import nn
 
 from .base import resolve_decoder_layers
-
 
 # The text-backbone path varies (Qwen2 vs InternLM2); the resolver introspects.
 _CANDIDATE_LAYER_PATHS = (
@@ -30,12 +29,12 @@ class InternVLAdapter:
     def __init__(self) -> None:
         self._layer_path: str | None = None
 
-    def get_decoder_layers(self, model: nn.Module) -> List[nn.Module]:
+    def get_decoder_layers(self, model: nn.Module) -> list[nn.Module]:
         layers, path = resolve_decoder_layers(model, _CANDIDATE_LAYER_PATHS)
         self._layer_path = path
         return layers
 
-    def get_attn_kv_projs(self, layer: nn.Module) -> Tuple[nn.Module, nn.Module]:
+    def get_attn_kv_projs(self, layer: nn.Module) -> tuple[nn.Module, nn.Module]:
         attn = layer.self_attn
         return attn.k_proj, attn.v_proj
 
@@ -58,7 +57,7 @@ class InternVLAdapter:
 
     def image_grid_shape(
         self, inputs: Mapping[str, object], model: nn.Module
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         # InternVL emits a fixed-count `num_image_token` per tile after the
         # pixel-shuffle downsample. For the common single-tile path, the grid
         # is the square root of `num_image_token`.

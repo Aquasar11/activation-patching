@@ -13,8 +13,9 @@ forward pass). No global state, no monkey-patching of `forward()` methods.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, Dict, FrozenSet, List, Optional, Sequence
+from typing import Callable
 
 import torch
 from torch import nn
@@ -36,17 +37,17 @@ class ForwardContext:
     that position belong on the cache, not on the live forward).
     """
 
-    forward_pass_indices: Optional[Sequence[int]]
+    forward_pass_indices: Sequence[int] | None
     # When set, only these target-seq positions are valid for the live forward.
     # In offline mode this is the contiguous suffix [start_index, T).
 
     def __post_init__(self) -> None:
         if self.forward_pass_indices is None:
-            self._map: Optional[Dict[int, int]] = None
+            self._map: dict[int, int] | None = None
         else:
             self._map = {int(t): i for i, t in enumerate(self.forward_pass_indices)}
 
-    def target_to_local(self, target_idx: int) -> Optional[int]:
+    def target_to_local(self, target_idx: int) -> int | None:
         if self._map is None:
             return int(target_idx)
         return self._map.get(int(target_idx))
@@ -58,7 +59,7 @@ class ForwardContext:
 
 def _capture_resid_pre_hook(
     layer_idx: int,
-    tokens_to_components: Dict[int, FrozenSet[Component]],
+    tokens_to_components: dict[int, frozenset[Component]],
     cache: SourceCache,
     keep_on_device: bool,
 ):
@@ -84,7 +85,7 @@ def _capture_resid_pre_hook(
 def _capture_kv_hook(
     layer_idx: int,
     component: Component,
-    tokens_to_components: Dict[int, FrozenSet[Component]],
+    tokens_to_components: dict[int, frozenset[Component]],
     cache: SourceCache,
     keep_on_device: bool,
 ):
@@ -114,7 +115,7 @@ def _capture_kv_hook(
 
 def _patch_resid_pre_hook(
     layer_idx: int,
-    tokens_to_components: Dict[int, FrozenSet[Component]],
+    tokens_to_components: dict[int, frozenset[Component]],
     cache: SourceCache,
     ctx: ForwardContext,
 ):
@@ -152,7 +153,7 @@ def _patch_resid_pre_hook(
 def _patch_kv_hook(
     layer_idx: int,
     component: Component,
-    tokens_to_components: Dict[int, FrozenSet[Component]],
+    tokens_to_components: dict[int, frozenset[Component]],
     cache: SourceCache,
     ctx: ForwardContext,
 ):
@@ -191,7 +192,7 @@ class HookHandle:
     """Registers a batch of PyTorch hooks on `__enter__`; removes on `__exit__`."""
 
     def __init__(self) -> None:
-        self._handles: List[torch.utils.hooks.RemovableHandle] = []
+        self._handles: list[torch.utils.hooks.RemovableHandle] = []
 
     def add_pre_hook(self, module: nn.Module, hook: Callable) -> None:
         self._handles.append(
@@ -201,7 +202,7 @@ class HookHandle:
     def add_forward_hook(self, module: nn.Module, hook: Callable) -> None:
         self._handles.append(module.register_forward_hook(hook))
 
-    def __enter__(self) -> "HookHandle":
+    def __enter__(self) -> HookHandle:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -220,7 +221,7 @@ class HookHandle:
 def register_capture_hooks(
     handle: HookHandle,
     layers: Sequence[nn.Module],
-    get_kv_projs: Callable[[nn.Module], "tuple[nn.Module, nn.Module]"],
+    get_kv_projs: Callable[[nn.Module], tuple[nn.Module, nn.Module]],
     cache_spec: CacheSpec,
     cache: SourceCache,
     keep_on_device: bool,
@@ -263,11 +264,11 @@ def register_capture_hooks(
 def register_patch_hooks(
     handle: HookHandle,
     layers: Sequence[nn.Module],
-    get_kv_projs: Callable[[nn.Module], "tuple[nn.Module, nn.Module]"],
+    get_kv_projs: Callable[[nn.Module], tuple[nn.Module, nn.Module]],
     patch_spec: PatchSpec,
     cache: SourceCache,
     ctx: ForwardContext,
-    skip_tokens_below: Optional[int] = None,
+    skip_tokens_below: int | None = None,
 ) -> None:
     """Attach patch hooks.
 

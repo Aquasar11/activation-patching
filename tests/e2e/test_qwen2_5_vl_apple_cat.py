@@ -31,7 +31,6 @@ from ._e2e_helpers import (
     top_k_tokens,
 )
 
-
 QWEN_MODEL_ID = os.environ.get(
     "ACTPATCH_QWEN_MODEL", "Qwen/Qwen2.5-VL-3B-Instruct"
 )

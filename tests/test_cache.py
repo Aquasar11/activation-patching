@@ -1,8 +1,6 @@
 """cache_source populates exactly the (layer, token, component) entries asked for."""
 from __future__ import annotations
 
-import torch
-
 from actpatch import ActivationPatcher, CacheSpec, Component
 from actpatch.cache_ops import cache_num_layers, read_cache_kv
 

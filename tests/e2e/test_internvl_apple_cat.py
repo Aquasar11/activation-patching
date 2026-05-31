@@ -31,7 +31,6 @@ from ._e2e_helpers import (
     top_k_tokens,
 )
 
-
 INTERN_MODEL_ID = os.environ.get(
     "ACTPATCH_INTERNVL_MODEL", "OpenGVLab/InternVL3_5-1B-hf"
 )

@@ -13,7 +13,7 @@ through the model with live hooks for any patches in that range.
 """
 from __future__ import annotations
 
-from typing import List, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
 
 import torch
 from torch import nn
@@ -27,7 +27,7 @@ from .hooks import (
     register_capture_hooks,
     register_patch_hooks,
 )
-from .specs import CacheSpec, Component, PatchSpec, SourceCache
+from .specs import CacheSpec, PatchSpec, SourceCache
 
 logger = get_logger(__name__)
 
@@ -39,7 +39,7 @@ class ActivationPatcher:
         self.model = model
         self.adapter = adapter
         # Cached so we don't re-introspect the model on every call.
-        self._layers: List[nn.Module] = adapter.get_decoder_layers(model)
+        self._layers: list[nn.Module] = adapter.get_decoder_layers(model)
         self._kv_proj_lookup = adapter.get_attn_kv_projs
         logger.debug(
             "ActivationPatcher init: model=%s adapter=%s num_decoder_layers=%d",
@@ -106,8 +106,8 @@ class ActivationPatcher:
         source_cache: SourceCache,
         patch_spec: PatchSpec,
         mode: str = "online",
-        start_index: Optional[int] = None,
-        forward_pass_indices: Optional[Sequence[int]] = None,
+        start_index: int | None = None,
+        forward_pass_indices: Sequence[int] | None = None,
     ):
         """Run the target forward with activations from `source_cache` patched in.
 
@@ -150,7 +150,7 @@ class ActivationPatcher:
         target_inputs: Mapping[str, torch.Tensor],
         source_cache: SourceCache,
         patch_spec: PatchSpec,
-        forward_pass_indices: Optional[Sequence[int]],
+        forward_pass_indices: Sequence[int] | None,
     ):
         input_ids = target_inputs.get("input_ids")
         if input_ids is None:
@@ -189,14 +189,17 @@ class ActivationPatcher:
         source_cache: SourceCache,
         patch_spec: PatchSpec,
         start_index: int,
-        forward_pass_indices: Optional[Sequence[int]],
+        forward_pass_indices: Sequence[int] | None,
     ):
         input_ids = target_inputs.get("input_ids")
         if input_ids is None:
             raise KeyError("target_inputs must contain `input_ids` for offline mode.")
         T = int(input_ids.shape[-1])
-        if not (0 <= start_index <= T):
-            raise ValueError(f"start_index must be in [0, {T}], got {start_index}.")
+        if not (0 <= start_index < T):
+            raise ValueError(
+                f"start_index must be in [0, {T}) so at least one position runs "
+                f"live, got {start_index}."
+            )
         logger.debug("offline forward: T=%d start_index=%d", T, start_index)
 
         # 1. Build the target KV cache for positions [0, start_index).
@@ -262,7 +265,7 @@ class ActivationPatcher:
         patch_spec: PatchSpec,
         *,
         mode: str = "online",
-        start_index: Optional[int] = None,
+        start_index: int | None = None,
         max_new_tokens: int = 1,
     ) -> torch.Tensor:
         """Run `patched_forward` once and greedily decode `max_new_tokens` tokens.
@@ -272,13 +275,29 @@ class ActivationPatcher:
         `start_index` persist via the cache for the rest of generation).
         Returns the generated token ids `[B, max_new_tokens]`.
         """
+        if max_new_tokens < 1:
+            raise ValueError(f"max_new_tokens must be >= 1, got {max_new_tokens}.")
+
+        # The decode loop relies on the first forward producing a KV cache, so
+        # force caching on. (Offline mode already runs with use_cache=True; for
+        # online we inject it here without mutating the caller's dict.)
+        first_inputs = dict(target_inputs)
+        first_inputs.setdefault("use_cache", True)
+
         outputs = self.patched_forward(
-            target_inputs, source_cache, patch_spec, mode=mode, start_index=start_index
+            first_inputs, source_cache, patch_spec, mode=mode, start_index=start_index
         )
         next_token = outputs.logits[:, -1, :].argmax(dim=-1, keepdim=True)
         generated = [next_token]
         cache = getattr(outputs, "past_key_values", None)
         logger.debug("patched_generate: first token=%s", next_token.flatten().tolist())
+
+        if max_new_tokens > 1 and cache is None:
+            raise RuntimeError(
+                "patched_generate needs a KV cache to decode more than one token, "
+                "but the first forward returned none. Ensure the model supports "
+                "`use_cache=True`."
+            )
 
         for _ in range(max_new_tokens - 1):
             with torch.no_grad():
@@ -337,8 +356,10 @@ class ActivationPatcher:
         # needed. Cropping to `start_index` is exact: causal attention means a
         # position's K/V depend only on earlier positions, so the kept prefix is
         # identical to a prefill that only saw `[0, start_index)`.
+        prefill_inputs = dict(target_inputs)
+        prefill_inputs["use_cache"] = True  # override, don't double-pass
         with torch.no_grad():
-            outputs = self.model(**dict(target_inputs), use_cache=True)
+            outputs = self.model(**prefill_inputs)
         cache = outputs.past_key_values
         if cache is None:
             raise RuntimeError(

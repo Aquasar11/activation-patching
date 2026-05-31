@@ -1,8 +1,6 @@
 """Online residual-stream patches: results match a hand-rolled forward."""
 from __future__ import annotations
 
-import copy
-
 import torch
 
 from actpatch import ActivationPatcher, CacheSpec, Component, PatchSpec

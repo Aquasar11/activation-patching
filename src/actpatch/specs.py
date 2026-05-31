@@ -8,9 +8,9 @@ by `ActivationPatcher.cache_source`.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, FrozenSet, Iterable, Optional, Tuple
 
 import torch
 
@@ -27,7 +27,7 @@ class Component(str, Enum):
 
 
 # layer_idx -> token_idx -> components to act on
-_PatchMap = Dict[int, Dict[int, FrozenSet[Component]]]
+_PatchMap = dict[int, dict[int, frozenset[Component]]]
 
 
 def _normalize(
@@ -52,11 +52,11 @@ class PatchSpec:
         layers: Iterable[int],
         tokens: Iterable[int],
         components: Iterable[Component],
-    ) -> "PatchSpec":
+    ) -> PatchSpec:
         """Convenience constructor: same component set at every (layer, token)."""
         return cls(patches=_normalize(layers, tokens, components))
 
-    def layers(self) -> FrozenSet[int]:
+    def layers(self) -> frozenset[int]:
         return frozenset(self.patches.keys())
 
     def has_resid(self) -> bool:
@@ -89,15 +89,15 @@ class CacheSpec:
         layers: Iterable[int],
         tokens: Iterable[int],
         components: Iterable[Component],
-    ) -> "CacheSpec":
+    ) -> CacheSpec:
         return cls(captures=_normalize(layers, tokens, components))
 
     @classmethod
-    def from_patch_spec(cls, spec: PatchSpec) -> "CacheSpec":
+    def from_patch_spec(cls, spec: PatchSpec) -> CacheSpec:
         """Build a CacheSpec that records exactly what `spec` will patch."""
         return cls(captures={L: dict(toks) for L, toks in spec.patches.items()})
 
-    def layers(self) -> FrozenSet[int]:
+    def layers(self) -> frozenset[int]:
         return frozenset(self.captures.keys())
 
 
@@ -113,13 +113,13 @@ class SourceCache:
     by offline mode to reuse source K/V before `start_index`.
     """
 
-    resid_in: Dict[Tuple[int, int], torch.Tensor] = field(default_factory=dict)
-    k_proj: Dict[Tuple[int, int], torch.Tensor] = field(default_factory=dict)
-    v_proj: Dict[Tuple[int, int], torch.Tensor] = field(default_factory=dict)
-    kv_cache: Optional[object] = None  # transformers.cache_utils.DynamicCache
+    resid_in: dict[tuple[int, int], torch.Tensor] = field(default_factory=dict)
+    k_proj: dict[tuple[int, int], torch.Tensor] = field(default_factory=dict)
+    v_proj: dict[tuple[int, int], torch.Tensor] = field(default_factory=dict)
+    kv_cache: object | None = None  # transformers.cache_utils.DynamicCache
     seq_len: int = 0
-    dtype: Optional[torch.dtype] = None
-    device: Optional[torch.device] = None
+    dtype: torch.dtype | None = None
+    device: torch.device | None = None
 
     def get(self, comp: Component, layer: int, token: int) -> torch.Tensor:
         store = {

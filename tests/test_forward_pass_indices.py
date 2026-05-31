@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-import torch
 
 from actpatch import ActivationPatcher, CacheSpec, Component, PatchSpec
 

@@ -49,3 +49,38 @@ def test_positions_count_mismatch_raises():
     mask = torch.zeros((4, 4), dtype=torch.bool)
     with pytest.raises(ValueError, match="positions"):
         mask_to_token_indices(mask, positions, grid_shape=(4, 4))
+
+
+def test_image_token_positions_3d_raises():
+    ids = torch.zeros((1, 2, 3), dtype=torch.long)
+    with pytest.raises(ValueError, match="1D or 2D"):
+        image_token_positions(ids, image_token_id=0)
+
+
+def test_image_token_positions_batch_gt2_all_rows_checked():
+    # Third row differs -> must be caught even though rows 0 and 1 agree.
+    ids = torch.tensor([[1, 7, 7, 2], [1, 7, 7, 2], [7, 1, 7, 2]])
+    with pytest.raises(ValueError):
+        image_token_positions(ids, image_token_id=7)
+
+
+def test_rect_mask_region_and_dtype():
+    mask = rect_mask((4, 5), top=1, left=2, bottom=3, right=4)
+    assert mask.dtype == torch.bool
+    assert mask.shape == (4, 5)
+    assert int(mask.sum()) == (3 - 1) * (4 - 2)  # 2 rows x 2 cols
+    assert mask[1, 2] and mask[2, 3]
+    assert not mask[0, 0] and not mask[3, 4]
+
+
+def test_mask_to_token_indices_rejects_unknown_order():
+    positions = torch.arange(0, 16)
+    mask = torch.zeros((4, 4), dtype=torch.bool)
+    with pytest.raises(ValueError, match="row_major"):
+        mask_to_token_indices(mask, positions, grid_shape=(4, 4), order="col_major")
+
+
+def test_mask_to_token_indices_empty_mask_returns_empty():
+    positions = torch.arange(0, 16)
+    mask = torch.zeros((4, 4), dtype=torch.bool)
+    assert mask_to_token_indices(mask, positions, grid_shape=(4, 4)) == []

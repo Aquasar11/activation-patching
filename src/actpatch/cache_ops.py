@@ -25,7 +25,7 @@ of the module is agnostic to which layout is installed.
 from __future__ import annotations
 
 import copy
-from typing import Iterable, Tuple
+from collections.abc import Iterable
 
 import torch
 
@@ -44,7 +44,7 @@ def cache_num_layers(cache) -> int:
     return len(cache)
 
 
-def read_cache_kv(cache, layer_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+def read_cache_kv(cache, layer_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
     """Return the `(keys, values)` tensors for a layer.
 
     The returned tensors are the *live* stored tensors (not copies), so
@@ -112,7 +112,7 @@ def apply_kv_patches_to_cache(
         return  # Nothing to patch in-cache.
 
     n_patched = 0
-    layer_set = set(int(x) for x in layers)
+    layer_set = {int(x) for x in layers}
     for layer_idx, token_map in patch_spec.patches.items():
         if layer_idx not in layer_set:
             raise IndexError(

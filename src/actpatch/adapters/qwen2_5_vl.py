@@ -9,12 +9,11 @@ Verified layer paths (transformers main branch, May 2026):
 """
 from __future__ import annotations
 
-from typing import List, Mapping, Tuple
+from collections.abc import Mapping
 
 from torch import nn
 
 from .base import resolve_decoder_layers
-
 
 # Ordered by likelihood across transformers revisions.
 _CANDIDATE_LAYER_PATHS = (
@@ -31,13 +30,13 @@ class Qwen2_5_VLAdapter:
     def __init__(self) -> None:
         self._layer_path: str | None = None
 
-    def get_decoder_layers(self, model: nn.Module) -> List[nn.Module]:
+    def get_decoder_layers(self, model: nn.Module) -> list[nn.Module]:
         layers, path = resolve_decoder_layers(model, _CANDIDATE_LAYER_PATHS)
         self._layer_path = path
         return layers
 
-    def get_attn_kv_projs(self, layer: nn.Module) -> Tuple[nn.Module, nn.Module]:
-        attn = getattr(layer, "self_attn")
+    def get_attn_kv_projs(self, layer: nn.Module) -> tuple[nn.Module, nn.Module]:
+        attn = layer.self_attn
         return attn.k_proj, attn.v_proj
 
     def get_image_token_id(self, model: nn.Module) -> int:
@@ -60,7 +59,7 @@ class Qwen2_5_VLAdapter:
 
     def image_grid_shape(
         self, inputs: Mapping[str, object], model: nn.Module
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         # Qwen2.5-VL emits `image_grid_thw` of shape [num_images, 3] = (t, h, w).
         grid_thw = inputs.get("image_grid_thw")
         if grid_thw is None:
