@@ -13,23 +13,28 @@ from typing import List, Mapping, Tuple
 
 from torch import nn
 
-from .base import _attr_path
+from .base import resolve_decoder_layers
+
+
+# Ordered by likelihood across transformers revisions.
+_CANDIDATE_LAYER_PATHS = (
+    "language_model.layers",
+    "model.language_model.layers",
+    "language_model.model.layers",
+    "model.layers",
+)
 
 
 class Qwen2_5_VLAdapter:
     name = "qwen2_5_vl"
 
+    def __init__(self) -> None:
+        self._layer_path: str | None = None
+
     def get_decoder_layers(self, model: nn.Module) -> List[nn.Module]:
-        layers = _attr_path(model, "language_model.layers")
-        if layers is None:
-            # Older transformers revisions nest under `.model`.
-            layers = _attr_path(model, "language_model.model.layers")
-        if layers is None:
-            raise AttributeError(
-                "Could not locate Qwen2.5-VL decoder layers at "
-                "`model.language_model.layers` or `model.language_model.model.layers`."
-            )
-        return list(layers)
+        layers, path = resolve_decoder_layers(model, _CANDIDATE_LAYER_PATHS)
+        self._layer_path = path
+        return layers
 
     def get_attn_kv_projs(self, layer: nn.Module) -> Tuple[nn.Module, nn.Module]:
         attn = getattr(layer, "self_attn")

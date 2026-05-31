@@ -47,6 +47,22 @@ out = patcher.patched_forward(
 
 See `tests/e2e/` for the apple/cat experiment.
 
+## Debugging
+
+The library is silent by default. Turn on verbose tracing of caching, hook
+registration, per-position patch application, and the offline cache surgery:
+
+```python
+import actpatch
+actpatch.enable_debug_logging()             # DEBUG -> stderr
+# ... run cache_source / patched_forward ...
+actpatch.disable_debug_logging()            # go quiet again
+```
+
+Traces are emitted on the `actpatch.*` logger hierarchy, so you can also wire
+them into your own logging config (e.g. `logging.getLogger("actpatch").setLevel(...)`)
+without calling the helper.
+
 ## Tests
 
 ```bash

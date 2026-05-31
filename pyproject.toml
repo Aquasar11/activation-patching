@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools==81.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,8 +11,9 @@ requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Aquasar" }]
 dependencies = [
-    "torch>=2.0",
-    "transformers>=4.46",
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    "transformers==5.9.0",
     "pillow",
 ]
 

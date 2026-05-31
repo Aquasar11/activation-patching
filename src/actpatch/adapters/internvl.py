@@ -12,12 +12,15 @@ from typing import List, Mapping, Tuple
 
 from torch import nn
 
-from .base import _attr_path
+from .base import resolve_decoder_layers
 
 
+# The text-backbone path varies (Qwen2 vs InternLM2); the resolver introspects.
 _CANDIDATE_LAYER_PATHS = (
     "language_model.model.layers",
     "language_model.layers",
+    "model.language_model.layers",
+    "model.language_model.model.layers",
 )
 
 
@@ -27,28 +30,10 @@ class InternVLAdapter:
     def __init__(self) -> None:
         self._layer_path: str | None = None
 
-    def _resolve_layers_path(self, model: nn.Module) -> str:
-        if self._layer_path is not None:
-            return self._layer_path
-        for candidate in _CANDIDATE_LAYER_PATHS:
-            layers = _attr_path(model, candidate)
-            if layers is None or len(layers) == 0:
-                continue
-            # Confirm the layer exposes the expected `self_attn.k_proj/v_proj`.
-            layer = layers[0]
-            attn = getattr(layer, "self_attn", None)
-            if attn is None or not (hasattr(attn, "k_proj") and hasattr(attn, "v_proj")):
-                continue
-            self._layer_path = candidate
-            return candidate
-        raise AttributeError(
-            "Could not locate InternVL decoder layers with `self_attn.k_proj`/`v_proj`. "
-            f"Tried: {_CANDIDATE_LAYER_PATHS}. The text backbone may not be supported yet."
-        )
-
     def get_decoder_layers(self, model: nn.Module) -> List[nn.Module]:
-        path = self._resolve_layers_path(model)
-        return list(_attr_path(model, path))
+        layers, path = resolve_decoder_layers(model, _CANDIDATE_LAYER_PATHS)
+        self._layer_path = path
+        return layers
 
     def get_attn_kv_projs(self, layer: nn.Module) -> Tuple[nn.Module, nn.Module]:
         attn = layer.self_attn

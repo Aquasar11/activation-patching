@@ -1,4 +1,5 @@
 """actpatch — activation patching for VLMs."""
+from ._logging import disable_debug_logging, enable_debug_logging, get_logger
 from .adapters import (
     InternVLAdapter,
     ModelAdapter,
@@ -29,6 +30,10 @@ __all__ = [
     "image_token_positions",
     "mask_to_token_indices",
     "rect_mask",
+    # debugging
+    "enable_debug_logging",
+    "disable_debug_logging",
+    "get_logger",
 ]
 
 __version__ = "0.1.0"

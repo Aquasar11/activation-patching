@@ -18,8 +18,9 @@ from typing import List, Mapping, Optional, Sequence
 import torch
 from torch import nn
 
+from ._logging import get_logger
 from .adapters.base import ModelAdapter
-from .cache_ops import apply_kv_patches_to_cache, clone_dynamic_cache
+from .cache_ops import apply_kv_patches_to_cache, crop_dynamic_cache
 from .hooks import (
     ForwardContext,
     HookHandle,
@@ -27,6 +28,8 @@ from .hooks import (
     register_patch_hooks,
 )
 from .specs import CacheSpec, Component, PatchSpec, SourceCache
+
+logger = get_logger(__name__)
 
 
 class ActivationPatcher:
@@ -38,6 +41,10 @@ class ActivationPatcher:
         # Cached so we don't re-introspect the model on every call.
         self._layers: List[nn.Module] = adapter.get_decoder_layers(model)
         self._kv_proj_lookup = adapter.get_attn_kv_projs
+        logger.debug(
+            "ActivationPatcher init: model=%s adapter=%s num_decoder_layers=%d",
+            type(model).__name__, type(adapter).__name__, len(self._layers),
+        )
 
     # ------------------------------------------------------------------ #
     # Source caching                                                     #
@@ -51,6 +58,10 @@ class ActivationPatcher:
         keep_kv_cache: bool = True,
     ) -> SourceCache:
         """Run the source forward, capture activations into a `SourceCache`."""
+        logger.debug(
+            "cache_source: capturing %d layers, input keys=%s",
+            len(cache_spec.captures), sorted(inputs.keys()),
+        )
         cache = SourceCache()
 
         with HookHandle() as handle, torch.no_grad():
@@ -79,6 +90,11 @@ class ActivationPatcher:
             if store:
                 cache.dtype = next(iter(store.values())).dtype
                 break
+        logger.debug(
+            "cache_source done: resid=%d k=%d v=%d entries, seq_len=%d, kv_cache=%s, dtype=%s",
+            len(cache.resid_in), len(cache.k_proj), len(cache.v_proj),
+            cache.seq_len, cache.kv_cache is not None, cache.dtype,
+        )
         return cache
 
     # ------------------------------------------------------------------ #
@@ -109,6 +125,11 @@ class ActivationPatcher:
                 (online) or `[start_index, T)` (offline). In offline mode the
                 indices must be a contiguous suffix.
         """
+        logger.debug(
+            "patched_forward: mode=%s start_index=%s patch_layers=%d resid=%s kv=%s",
+            mode, start_index, len(patch_spec.patches),
+            patch_spec.has_resid(), patch_spec.has_kv(),
+        )
         if mode == "online":
             return self._online_forward(
                 target_inputs, source_cache, patch_spec, forward_pass_indices
@@ -139,11 +160,13 @@ class ActivationPatcher:
         if forward_pass_indices is None:
             ctx = ForwardContext(forward_pass_indices=None)
             live_inputs = dict(target_inputs)
+            logger.debug("online forward: full sequence T=%d", T)
         else:
             indices = list(forward_pass_indices)
             self._validate_indices(indices, T)
             ctx = ForwardContext(forward_pass_indices=indices)
             live_inputs = self._slice_inputs_to_indices(target_inputs, indices)
+            logger.debug("online forward: T=%d, %d explicit indices", T, len(indices))
 
         with HookHandle() as handle, torch.no_grad():
             register_patch_hooks(
@@ -174,6 +197,7 @@ class ActivationPatcher:
         T = int(input_ids.shape[-1])
         if not (0 <= start_index <= T):
             raise ValueError(f"start_index must be in [0, {T}], got {start_index}.")
+        logger.debug("offline forward: T=%d start_index=%d", T, start_index)
 
         # 1. Build the target KV cache for positions [0, start_index).
         target_cache = self._build_target_prefill_cache(target_inputs, start_index)
@@ -211,6 +235,10 @@ class ActivationPatcher:
         live_inputs = self._build_offline_live_inputs(target_inputs, indices, T)
         live_inputs["past_key_values"] = target_cache
         live_inputs["use_cache"] = True
+        logger.debug(
+            "offline live forward: %d live positions [%d..%d)",
+            len(indices), indices[0] if indices else start_index, T,
+        )
 
         with HookHandle() as handle, torch.no_grad():
             register_patch_hooks(
@@ -250,6 +278,7 @@ class ActivationPatcher:
         next_token = outputs.logits[:, -1, :].argmax(dim=-1, keepdim=True)
         generated = [next_token]
         cache = getattr(outputs, "past_key_values", None)
+        logger.debug("patched_generate: first token=%s", next_token.flatten().tolist())
 
         for _ in range(max_new_tokens - 1):
             with torch.no_grad():
@@ -301,8 +330,13 @@ class ActivationPatcher:
             # Empty cache: build a fresh DynamicCache via a zero-length convention.
             # The cleanest portable way is to import DynamicCache; we do it lazily.
             from transformers.cache_utils import DynamicCache  # noqa: WPS433
+            logger.debug("prefill cache: start_index=0, returning empty DynamicCache")
             return DynamicCache()
 
+        # We own this freshly produced cache, so we crop it in place — no clone
+        # needed. Cropping to `start_index` is exact: causal attention means a
+        # position's K/V depend only on earlier positions, so the kept prefix is
+        # identical to a prefill that only saw `[0, start_index)`.
         with torch.no_grad():
             outputs = self.model(**dict(target_inputs), use_cache=True)
         cache = outputs.past_key_values
@@ -311,20 +345,7 @@ class ActivationPatcher:
                 "Target model did not return a `past_key_values` cache; "
                 "ensure the model supports KV caching."
             )
-        cache = clone_dynamic_cache(cache)
-        return self._crop_dynamic_cache(cache, length=start_index)
-
-    @staticmethod
-    def _crop_dynamic_cache(cache, length: int):
-        """Crop every layer's K and V to the first `length` positions in-place."""
-        for i, k in enumerate(cache.key_cache):
-            cache.key_cache[i] = k[..., :length, :]
-        for i, v in enumerate(cache.value_cache):
-            cache.value_cache[i] = v[..., :length, :]
-        if hasattr(cache, "_seen_tokens"):
-            cache._seen_tokens = length
-        elif hasattr(cache, "seen_tokens"):
-            cache.seen_tokens = length
+        crop_dynamic_cache(cache, start_index)
         return cache
 
     def _build_offline_live_inputs(

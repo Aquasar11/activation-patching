@@ -19,7 +19,10 @@ from typing import Callable, Dict, FrozenSet, List, Optional, Sequence
 import torch
 from torch import nn
 
+from ._logging import get_logger
 from .specs import CacheSpec, Component, PatchSpec, SourceCache
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -70,6 +73,9 @@ def _capture_resid_pre_hook(
                 continue
             row = hs[:, tok, :].detach()
             cache.resid_in[(layer_idx, tok)] = row if keep_on_device else row.cpu()
+            logger.debug(
+                "capture resid_in: layer=%d token=%d shape=%s", layer_idx, tok, tuple(row.shape)
+            )
         return None  # do not modify inputs
 
     return hook
@@ -93,6 +99,10 @@ def _capture_kv_hook(
                 continue
             row = output[:, tok, :].detach()
             store[(layer_idx, tok)] = row if keep_on_device else row.cpu()
+            logger.debug(
+                "capture %s: layer=%d token=%d shape=%s",
+                component.value, layer_idx, tok, tuple(row.shape),
+            )
         return None
 
     return hook
@@ -126,6 +136,9 @@ def _patch_resid_pre_hook(
                 modified = True
             src = cache.resid_in[(layer_idx, tok)].to(new_hs.device, dtype=new_hs.dtype)
             new_hs[:, local, :] = src
+            logger.debug(
+                "patch resid_in: layer=%d token=%d -> local_row=%d", layer_idx, tok, local
+            )
         if not modified:
             return None
         if has_kw:
@@ -161,6 +174,10 @@ def _patch_kv_hook(
                 modified = True
             src = store[(layer_idx, tok)].to(new_out.device, dtype=new_out.dtype)
             new_out[:, local, :] = src
+            logger.debug(
+                "patch %s: layer=%d token=%d -> local_row=%d",
+                component.value, layer_idx, tok, local,
+            )
         return new_out if modified else None
 
     return hook
@@ -209,6 +226,7 @@ def register_capture_hooks(
     keep_on_device: bool,
 ) -> None:
     """Attach capture hooks for every (layer, token, component) in `cache_spec`."""
+    n_before = len(handle._handles)
     for layer_idx, token_map in cache_spec.captures.items():
         if layer_idx >= len(layers):
             raise IndexError(
@@ -236,6 +254,10 @@ def register_capture_hooks(
                     v_proj,
                     _capture_kv_hook(layer_idx, Component.V, token_map, cache, keep_on_device),
                 )
+    logger.debug(
+        "registered %d capture hooks across %d layers (keep_on_device=%s)",
+        len(handle._handles) - n_before, len(cache_spec.captures), keep_on_device,
+    )
 
 
 def register_patch_hooks(
@@ -254,6 +276,7 @@ def register_patch_hooks(
     KV cache directly by `cache_ops`); residual patches at those positions are
     silently skipped (no residual is reconstructible from a KV cache alone).
     """
+    n_before = len(handle._handles)
     for layer_idx, token_map in patch_spec.patches.items():
         if layer_idx >= len(layers):
             raise IndexError(
@@ -288,3 +311,7 @@ def register_patch_hooks(
                     v_proj,
                     _patch_kv_hook(layer_idx, Component.V, token_map, cache, ctx),
                 )
+    logger.debug(
+        "registered %d patch hooks across %d layers (skip_tokens_below=%s)",
+        len(handle._handles) - n_before, len(patch_spec.patches), skip_tokens_below,
+    )

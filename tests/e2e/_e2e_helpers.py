@@ -20,14 +20,32 @@ Run with:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable, List, Optional, Tuple
 
+import pytest
 import torch
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 APPLE = DATA / "red_apple.jpeg"
 CAT = DATA / "cat.jpeg"
-PROMPT = "this is a photo of"
+
+# A one-word-answer prompt so the *next* token is the object name itself,
+# which makes the apple->cat flip observable in a single decoding step.
+PROMPT = "What is the main object in this image? Answer with one word:"
+
+CAT_WORDS = ("cat", "kitten", "kitty", "feline")
+APPLE_WORDS = ("apple", "fruit")
+
+
+def require_torchvision() -> None:
+    """Skip (don't error) if torchvision is missing — the HF video processor needs it."""
+    try:
+        import torchvision  # noqa: F401
+    except Exception:
+        pytest.skip(
+            "torchvision is required to load the VLM processor "
+            "(pip install torchvision) — install it to run this end-to-end test."
+        )
 
 
 def centered_grid_mask(grid_shape: Tuple[int, int], pad_fraction: float = 0.2) -> torch.Tensor:
@@ -56,3 +74,13 @@ def top_k_tokens(processor_or_tokenizer, logits_row: torch.Tensor, k: int = 8) -
 def contains_target_word(text: str, candidates: Iterable[str]) -> bool:
     low = text.strip().lower()
     return any(c in low for c in candidates)
+
+
+def first_match_rank(pairs: List[Tuple[str, float]], words: Iterable[str]) -> Optional[int]:
+    """Return the 0-based rank of the first token whose text contains any of `words`."""
+    words = tuple(w.lower() for w in words)
+    for rank, (text, _) in enumerate(pairs):
+        low = text.lower()
+        if any(w in low for w in words):
+            return rank
+    return None

@@ -13,6 +13,10 @@ from typing import Dict, List, Mapping, Protocol, Tuple, runtime_checkable
 
 from torch import nn
 
+from .._logging import get_logger
+
+logger = get_logger(__name__)
+
 
 @runtime_checkable
 class ModelAdapter(Protocol):
@@ -46,3 +50,30 @@ def _attr_path(obj, path: str):
             return None
         cur = getattr(cur, part)
     return cur
+
+
+def resolve_decoder_layers(model, candidates: Tuple[str, ...]) -> Tuple[List[nn.Module], str]:
+    """Find the LLM decoder-layer list by trying candidate attribute paths.
+
+    A path is accepted only if it yields a non-empty module list whose first
+    element exposes `self_attn.k_proj` and `self_attn.v_proj` — this guards
+    against accidentally grabbing the vision encoder's layer list.
+
+    Returns `(layers, matched_path)`.
+    """
+    for path in candidates:
+        layers = _attr_path(model, path)
+        if layers is None or len(layers) == 0:
+            continue
+        attn = getattr(layers[0], "self_attn", None)
+        if attn is not None and hasattr(attn, "k_proj") and hasattr(attn, "v_proj"):
+            logger.debug(
+                "resolved decoder layers at %r (%d layers, class=%s)",
+                path, len(layers), type(layers[0]).__name__,
+            )
+            return list(layers), path
+        logger.debug("candidate path %r rejected (no self_attn.k_proj/v_proj)", path)
+    raise AttributeError(
+        f"Could not locate decoder layers exposing `self_attn.k_proj`/`v_proj`. "
+        f"Tried paths: {candidates}. The model layout may not be supported yet."
+    )

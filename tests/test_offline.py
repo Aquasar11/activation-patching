@@ -4,6 +4,7 @@ from __future__ import annotations
 import torch
 
 from actpatch import ActivationPatcher, CacheSpec, Component, PatchSpec
+from actpatch.cache_ops import crop_dynamic_cache, read_cache_kv
 
 
 def test_offline_no_patch_equals_unpatched(tiny_model, tiny_adapter, sample_inputs):
@@ -64,15 +65,12 @@ def test_offline_kv_cache_patch_matches_manual(
         tgt_run = tiny_model(**other_inputs, use_cache=True)
         src_run = tiny_model(**sample_inputs, use_cache=True)
     ref_cache = tgt_run.past_key_values
-    # Crop to start_index.
-    for i in range(len(ref_cache.key_cache)):
-        ref_cache.key_cache[i] = ref_cache.key_cache[i][..., :start, :].clone()
-        ref_cache.value_cache[i] = ref_cache.value_cache[i][..., :start, :].clone()
-    if hasattr(ref_cache, "_seen_tokens"):
-        ref_cache._seen_tokens = start
-    # Apply manual patch.
-    ref_cache.key_cache[L][:, :, t, :] = src_run.past_key_values.key_cache[L][:, :, t, :]
-    ref_cache.value_cache[L][:, :, t, :] = src_run.past_key_values.value_cache[L][:, :, t, :]
+    # Crop to start_index, then overwrite the K/V slot at (L, t) by hand.
+    crop_dynamic_cache(ref_cache, start)
+    ref_k, ref_v = read_cache_kv(ref_cache, L)
+    src_k, src_v = read_cache_kv(src_run.past_key_values, L)
+    ref_k[:, :, t, :] = src_k[:, :, t, :]
+    ref_v[:, :, t, :] = src_v[:, :, t, :]
 
     # Run the live forward by hand on the suffix.
     suffix_ids = other_inputs["input_ids"][:, start:]

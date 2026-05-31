@@ -4,6 +4,7 @@ from __future__ import annotations
 import torch
 
 from actpatch import ActivationPatcher, CacheSpec, Component
+from actpatch.cache_ops import cache_num_layers, read_cache_kv
 
 
 def test_cache_only_requested_entries(tiny_model, tiny_adapter, sample_inputs):
@@ -51,6 +52,7 @@ def test_cache_includes_kv_cache(tiny_model, tiny_adapter, sample_inputs):
     cache = patcher.cache_source(sample_inputs, spec)
 
     assert cache.kv_cache is not None
-    assert len(cache.kv_cache.key_cache) == tiny_model.config.num_hidden_layers
+    assert cache_num_layers(cache.kv_cache) == tiny_model.config.num_hidden_layers
     T = sample_inputs["input_ids"].shape[-1]
-    assert cache.kv_cache.key_cache[0].shape[-2] == T
+    keys, _ = read_cache_kv(cache.kv_cache, 0)
+    assert keys.shape[-2] == T
