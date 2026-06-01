@@ -146,6 +146,62 @@ def test_offline_residual_before_start_is_skipped(
     assert torch.allclose(skipped, unpatched, atol=1e-6)
 
 
+# --- patching() context manager ------------------------------------------
+
+def test_patching_context_matches_online_forward(
+    tiny_model, tiny_adapter, sample_inputs, other_inputs
+):
+    """A full-sequence forward inside `patching()` equals an online patched_forward."""
+    patcher = ActivationPatcher(tiny_model, tiny_adapter)
+    spec = CacheSpec.for_layers_tokens([2], [3], [Component.RESID_IN])
+    src = patcher.cache_source(sample_inputs, spec)
+    patch = PatchSpec.for_layers_tokens([2], [3], [Component.RESID_IN])
+
+    online = patcher.patched_forward(other_inputs, src, patch, mode="online").logits
+    with patcher.patching(src, patch):
+        with torch.no_grad():
+            ctx_logits = tiny_model(**other_inputs).logits
+    assert torch.allclose(online, ctx_logits, atol=1e-5)
+
+
+def test_patching_context_removes_hooks_on_exit(tiny_model, tiny_adapter, sample_inputs):
+    patcher = ActivationPatcher(tiny_model, tiny_adapter)
+    src = patcher.cache_source(sample_inputs, CacheSpec.for_layers_tokens([0], [1], [Component.K]))
+    patch = PatchSpec.for_layers_tokens([0], [1], [Component.K])
+    with patcher.patching(src, patch):
+        pass
+    # No patch hooks should linger on the decoder layers / their projections.
+    layer = tiny_adapter.get_decoder_layers(tiny_model)[0]
+    assert len(layer._forward_pre_hooks) == 0
+    k_proj, _ = tiny_adapter.get_attn_kv_projs(layer)
+    assert len(k_proj._forward_hooks) == 0
+
+
+def test_patching_context_survives_incremental_decode(tiny_model, tiny_adapter, sample_inputs):
+    """Within the context, a 1-token decode step must skip out-of-range patches.
+
+    The patched position (token 3) is only present during the prefill; the
+    follow-up single-token forward must not raise and must leave that step
+    unpatched (its value is already in the KV cache).
+    """
+    patcher = ActivationPatcher(tiny_model, tiny_adapter)
+    src = patcher.cache_source(sample_inputs, CacheSpec.for_layers_tokens([1], [3], [Component.K]))
+    patch = PatchSpec.for_layers_tokens([1], [3], [Component.K])
+
+    T = sample_inputs["input_ids"].shape[-1]
+    with patcher.patching(src, patch):
+        with torch.no_grad():
+            out = tiny_model(**sample_inputs, use_cache=True)
+            next_tok = out.logits[:, -1:].argmax(-1)
+            step = tiny_model(
+                input_ids=next_tok,
+                past_key_values=out.past_key_values,
+                use_cache=True,
+                cache_position=torch.tensor([T]),
+            )
+    assert step.logits.shape[1] == 1  # decoded one token without error
+
+
 # --- generation -----------------------------------------------------------
 
 def test_patched_generate_single_token_shape(tiny_model, tiny_adapter, sample_inputs):

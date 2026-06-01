@@ -261,6 +261,7 @@ Returned by `cache_source`. Holds the captured tensors (`resid_in`, `k_proj`,
 | `cache_source(inputs, cache_spec, *, keep_on_device=False, keep_kv_cache=True)` | Run the source forward and capture activations into a `SourceCache`. Captured tensors move to CPU by default; pass `keep_on_device=True` to retain them on the model's device. |
 | `patched_forward(target_inputs, source_cache, patch_spec, mode="online", start_index=None, forward_pass_indices=None)` | Run the target forward with source activations patched in. Returns the model's output object (has `.logits`, `.past_key_values`). |
 | `patched_generate(target_inputs, source_cache, patch_spec, *, mode="online", start_index=None, max_new_tokens=1)` | Greedy-decode `max_new_tokens` tokens; patches apply on the first step and persist through the KV cache. Returns token ids `[B, max_new_tokens]`. |
+| `patching(source_cache, patch_spec, *, forward_pass_indices=None)` | Context manager that keeps patch hooks active while *you* drive the model — e.g. `with patcher.patching(cache, patch): model.generate(**inputs, ...)`. Lets `generate` handle position-ids / KV cache natively, so you can watch the full generation with and without patching. |
 
 ### Image helpers
 - `image_token_positions(input_ids, image_token_id) -> LongTensor`

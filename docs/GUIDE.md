@@ -14,6 +14,7 @@ actually do X" companion.
 4. [How the library is structured](#4-how-the-library-is-structured)
 5. [Recipes](#5-recipes)
    - [Full image swap](#recipe-full-image-swap)
+   - [Generate a full response under patching](#recipe-generate-under-patching)
    - [Patch only the foreground object](#recipe-patch-only-the-foreground)
    - [Layer scan: where does the information live?](#recipe-layer-scan)
    - [Offline mode (KV-cache reuse)](#recipe-offline-mode)
@@ -188,6 +189,31 @@ The strongest, most robust intervention — replace the entire image
 representation. This is the quick-start example. Use it when you want to be sure
 the visual content is fully transplanted (it does not depend on how a model
 orders its image tokens).
+
+<a name="recipe-generate-under-patching"></a>
+### Generate a full response under patching
+
+`patched_forward` gives you the logits for one step. To watch the model produce
+a **whole response** with the patch in effect, use the `patching()` context
+manager and call the model's own `generate()` inside it — that way HF handles
+position-ids and the KV cache natively (important for Qwen2.5-VL's M-RoPE):
+
+```python
+cache = patcher.cache_source(src, CacheSpec.for_layers_tokens(layers, src_pos, comps))
+# (re-key cache from src_pos -> tgt_pos as in the quick-start)
+patch = PatchSpec.for_layers_tokens(layers, tgt_pos, comps)
+
+with patcher.patching(cache, patch):
+    out = model.generate(**tgt, max_new_tokens=40, do_sample=False)
+text = processor.tokenizer.decode(out[0, tgt["input_ids"].shape[1]:], skip_special_tokens=True)
+print(text)   # describes the *cat*, even though tgt is the apple image
+```
+
+The patch applies during the prefill (where the image tokens are present) and
+bakes into the KV cache, so the entire generated sentence reflects the swap.
+Positions absent from later single-token steps are skipped automatically.
+
+`notebooks/apple_cat_demo.ipynb` shows this end to end with before/after text.
 
 <a name="recipe-patch-only-the-foreground"></a>
 ### Patch only the foreground object

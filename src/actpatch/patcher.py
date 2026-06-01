@@ -14,6 +14,7 @@ through the model with live hooks for any patches in that range.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextlib import contextmanager
 
 import torch
 from torch import nn
@@ -254,6 +255,51 @@ class ActivationPatcher:
                 skip_tokens_below=start_index,
             )
             return self.model(**live_inputs)
+
+    # ------------------------------------------------------------------ #
+    # Context manager: patch hooks active for caller-driven forward/generate
+    # ------------------------------------------------------------------ #
+    @contextmanager
+    def patching(
+        self,
+        source_cache: SourceCache,
+        patch_spec: PatchSpec,
+        *,
+        forward_pass_indices: Sequence[int] | None = None,
+    ):
+        """Keep patch hooks active while *you* drive the model.
+
+        Unlike `patched_forward`, this does not call the model — you do, inside
+        the `with` block. That lets you use the model's own
+        `model.generate(...)`, which handles position ids and the KV cache
+        natively (important for models like Qwen2.5-VL with M-RoPE), so you can
+        watch the *full* generation unfold both with and without patching.
+
+        Patches apply on the prefill (where the patched positions are present);
+        on later incremental-decode steps those positions live only in the KV
+        cache and are skipped automatically — their patched values are already
+        baked into the cache from the prefill.
+
+        Example:
+            with patcher.patching(source_cache, patch_spec):
+                out = model.generate(**target_inputs, max_new_tokens=40)
+
+        Note: this is an online-style intervention (full prefill). For offline
+        KV-cache reuse use `patched_forward(mode="offline", ...)`.
+        """
+        ctx = ForwardContext(forward_pass_indices=forward_pass_indices)
+        with HookHandle() as handle:
+            register_patch_hooks(
+                handle,
+                self._layers,
+                self._kv_proj_lookup,
+                patch_spec,
+                source_cache,
+                ctx,
+                skip_tokens_below=None,
+            )
+            logger.debug("patching context active: %d patched layers", len(patch_spec.patches))
+            yield self
 
     # ------------------------------------------------------------------ #
     # Convenience: greedy generation                                     #

@@ -130,7 +130,9 @@ def _patch_resid_pre_hook(
             if Component.RESID_IN not in comps:
                 continue
             local = ctx.target_to_local(tok)
-            if local is None:
+            if local is None or local >= hs.shape[1]:
+                # Position absent from this forward (e.g. an incremental decode
+                # step) — it is served from the KV cache, so nothing to do here.
                 continue
             if not modified:
                 new_hs = hs.clone()
@@ -168,7 +170,8 @@ def _patch_kv_hook(
             if component not in comps:
                 continue
             local = ctx.target_to_local(tok)
-            if local is None:
+            if local is None or local >= output.shape[1]:
+                # Position absent from this forward (served from the KV cache).
                 continue
             if not modified:
                 new_out = output.clone()
