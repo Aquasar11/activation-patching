@@ -162,6 +162,22 @@ patch = PatchSpec.for_layers_tokens(layers, fg_positions, [Component.RESID_IN])
 the number of image tokens matches `H*W`, so a wrong grid fails loudly rather
 than silently patching the wrong tokens.
 
+> **Align the two images' grids first.** Both Qwen2.5-VL and InternVL tokenise
+> images at *dynamic* resolution, so two differently-shaped photos yield
+> different numbers of image tokens — and image patching needs a 1:1 map
+> between source and target positions. Force an identical grid before
+> processing:
+>
+> - **Qwen2.5-VL** preserves aspect ratio, so resize both images to the same
+>   square whose side is a multiple of `patch_size * spatial_merge_size`
+>   (28 by default): `Image.open(p).convert("RGB").resize((448, 448))` → a
+>   16×16 = 256-token grid.
+> - **InternVL** tiles dynamically; pass `crop_to_patches=False` to the
+>   processor so every image is a single tile with a fixed token count.
+>
+> `tests/e2e/_e2e_helpers.py` shows both in `load_square_image` and the
+> per-model build functions.
+
 ---
 
 ## Online vs offline

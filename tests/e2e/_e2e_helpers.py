@@ -3,8 +3,7 @@
 Both VLM e2e tests follow the same recipe:
 
     1. Load the model + processor.
-    2. Build inputs for the cat image (source) and apple image (target),
-       with prompt "this is a photo of".
+    2. Build inputs for the cat image (source) and apple image (target).
     3. Find image-token positions in both inputs.
     4. Build a centred 2D foreground mask covering the central area of the
        image grid (object, not background).
@@ -12,6 +11,18 @@ Both VLM e2e tests follow the same recipe:
        all decoder layers (RESID_IN + K + V).
     6. Run patched_forward on the apple inputs with those patches.
     7. Decode the next token and verify it shifts toward "cat".
+
+A subtlety that bites real VLMs: both Qwen2.5-VL and InternVL use *dynamic*
+image tokenisation, so two differently-shaped photos produce different numbers
+of image tokens (and different grids). Activation patching needs a 1:1 mapping
+between source and target image tokens, so we force an identical grid for both
+images:
+
+* **Qwen2.5-VL** keeps aspect ratio in `smart_resize`, so we pre-resize each
+  image to the same square whose side is a multiple of patch_size*merge_size
+  (28). A 448x448 image -> 32x32 patches -> 16x16 merged tokens (256).
+* **InternVL** tiles images dynamically (`crop_to_patches=True`); we pass
+  `crop_to_patches=False` so every image becomes a single tile (256 tokens).
 
 Run with:
 
@@ -24,10 +35,20 @@ from pathlib import Path
 
 import pytest
 import torch
+from PIL import Image
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 APPLE = DATA / "red_apple.jpeg"
 CAT = DATA / "cat.jpeg"
+
+# Square side fed to the models. Must be a multiple of 28 (patch 14 * merge 2)
+# for Qwen, and equal to InternVL's tile size (448) so a single tile is exact.
+IMAGE_SIZE = 448
+
+
+def load_square_image(path: str, size: int = IMAGE_SIZE) -> Image.Image:
+    """Open an image and resize it to `size`x`size` so every input shares one grid."""
+    return Image.open(path).convert("RGB").resize((size, size))
 
 # A one-word-answer prompt so the *next* token is the object name itself,
 # which makes the apple->cat flip observable in a single decoding step.

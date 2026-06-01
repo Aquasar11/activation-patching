@@ -8,7 +8,6 @@ import os
 
 import pytest
 import torch
-from PIL import Image
 
 from actpatch import (
     ActivationPatcher,
@@ -27,6 +26,7 @@ from ._e2e_helpers import (
     PROMPT,
     centered_grid_mask,
     first_match_rank,
+    load_square_image,
     require_torchvision,
     top_k_tokens,
 )
@@ -37,8 +37,8 @@ QWEN_MODEL_ID = os.environ.get(
 
 
 def _build_qwen_inputs(processor, image_path: str, device):
-    """Build a single-turn 'this is a photo of' prompt with one image."""
-    image = Image.open(image_path).convert("RGB")
+    """Build a one-image prompt. The image is squared so both runs share a grid."""
+    image = load_square_image(image_path)
     messages = [
         {
             "role": "user",
@@ -51,9 +51,6 @@ def _build_qwen_inputs(processor, image_path: str, device):
     text = processor.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
-    # Strip the trailing assistant role marker so the model continues from
-    # the user's prompt directly — we want the next predicted token to
-    # complete "this is a photo of ___".
     return processor(text=[text], images=[image], return_tensors="pt").to(device)
 
 

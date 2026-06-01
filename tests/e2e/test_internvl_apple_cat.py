@@ -8,7 +8,6 @@ import os
 
 import pytest
 import torch
-from PIL import Image
 
 from actpatch import (
     ActivationPatcher,
@@ -27,6 +26,7 @@ from ._e2e_helpers import (
     PROMPT,
     centered_grid_mask,
     first_match_rank,
+    load_square_image,
     require_torchvision,
     top_k_tokens,
 )
@@ -37,7 +37,9 @@ INTERN_MODEL_ID = os.environ.get(
 
 
 def _build_internvl_inputs(processor, image_path: str, device):
-    image = Image.open(image_path).convert("RGB")
+    # crop_to_patches=False disables dynamic tiling so every image is a single
+    # tile (a fixed image-token count), giving source and target the same grid.
+    image = load_square_image(image_path)
     messages = [
         {
             "role": "user",
@@ -50,7 +52,9 @@ def _build_internvl_inputs(processor, image_path: str, device):
     text = processor.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
-    return processor(text=[text], images=[image], return_tensors="pt").to(device)
+    return processor(
+        text=[text], images=[image], crop_to_patches=False, return_tensors="pt"
+    ).to(device)
 
 
 @pytest.mark.slow
