@@ -443,8 +443,15 @@ ACTPATCH_RUN_E2E=1 pytest tests/e2e -m slow -s   # end-to-end on a GPU box
 The unit suite runs against a tiny synthetic transformer (`tests/tiny_model.py`)
 that mimics the HF decoder-layer interface, so it exercises the real hook and
 cache machinery without downloading weights. The e2e suite runs the apple→cat
-experiment on real VLMs and is opt-in via `ACTPATCH_RUN_E2E=1`. Useful env vars:
-`ACTPATCH_QWEN_MODEL`, `ACTPATCH_INTERNVL_MODEL`.
+experiment on real VLMs and is opt-in via `ACTPATCH_RUN_E2E=1`. It performs a
+**full image-token swap** (every cat image token → the apple run), which is the
+most robust form of the experiment and is independent of how a model orders its
+image tokens.
+
+Useful env vars:
+- `ACTPATCH_QWEN_MODEL`, `ACTPATCH_INTERNVL_MODEL` — override the model ids.
+- `ACTPATCH_DEBUG=1` — turn on debug tracing during the e2e run, printing every
+  capture/patch so you can confirm the hooks fire and count the patched slots.
 
 ---
 

@@ -30,12 +30,22 @@ Run with:
 """
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
 import torch
 from PIL import Image
+
+from actpatch import (
+    CacheSpec,
+    Component,
+    PatchSpec,
+    enable_debug_logging,
+    image_token_positions,
+    mask_to_token_indices,
+)
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 APPLE = DATA / "red_apple.jpeg"
@@ -67,6 +77,17 @@ def require_torchvision() -> None:
             "torchvision is required to load the VLM processor "
             "(pip install torchvision) — install it to run this end-to-end test."
         )
+
+
+def maybe_enable_debug() -> None:
+    """Turn on actpatch debug tracing when ACTPATCH_DEBUG=1.
+
+    Handy on the GPU box: it prints every capture/patch (with the layer, token,
+    and local-row mapping), so you can confirm the hooks actually fire and how
+    many slots were patched — the first thing to check if a swap looks weak.
+    """
+    if os.environ.get("ACTPATCH_DEBUG") == "1":
+        enable_debug_logging()
 
 
 def centered_grid_mask(grid_shape: tuple[int, int], pad_fraction: float = 0.2) -> torch.Tensor:
@@ -105,3 +126,55 @@ def first_match_rank(pairs: list[tuple[str, float]], words: Iterable[str]) -> in
         if any(w in low for w in words):
             return rank
     return None
+
+
+def run_image_swap(patcher, adapter, model, src_inputs, tgt_inputs, *, mask=None):
+    """Transplant the source image's tokens into the target run and return the output.
+
+    Caches the source (cat) activations at the image-token positions across all
+    decoder layers (RESID_IN + K + V), then patches them onto the matching
+    target (apple) positions and runs an online patched forward.
+
+    Args:
+        mask: if None, swap *all* image tokens (a full image transplant — the
+            most robust experiment). Otherwise a 2D bool grid selecting a
+            subset of the grid (e.g. a foreground region). Note that a subset
+            mask assumes row-major token order, which holds for Qwen2.5-VL but
+            not necessarily for models that reorder tokens (e.g. InternVL's
+            pixel-shuffle) — prefer a full swap there.
+
+    Returns the patched model output (has `.logits`).
+    """
+    img_id = adapter.get_image_token_id(model)
+    src_img = image_token_positions(src_inputs["input_ids"][0], img_id)
+    tgt_img = image_token_positions(tgt_inputs["input_ids"][0], img_id)
+    if src_img.numel() != tgt_img.numel():
+        raise AssertionError(
+            f"Source/target image-token counts differ: {src_img.numel()} vs "
+            f"{tgt_img.numel()}. Image patching needs aligned grids — resize both "
+            f"images to the same square (and disable dynamic tiling)."
+        )
+
+    if mask is None:
+        src_pos = src_img.tolist()
+        tgt_pos = tgt_img.tolist()
+    else:
+        grid = adapter.image_grid_shape(tgt_inputs, model)
+        src_pos = mask_to_token_indices(mask, src_img, grid)
+        tgt_pos = mask_to_token_indices(mask, tgt_img, grid)
+
+    layers = list(range(len(adapter.get_decoder_layers(model))))
+    comps = [Component.RESID_IN, Component.K, Component.V]
+
+    src_cache = patcher.cache_source(
+        src_inputs, CacheSpec.for_layers_tokens(layers, src_pos, comps)
+    )
+    # Re-key cached tensors from source positions to the matching target ones.
+    src_to_tgt = dict(zip(src_pos, tgt_pos))
+    for store in (src_cache.resid_in, src_cache.k_proj, src_cache.v_proj):
+        remapped = {(L, src_to_tgt[t]): v for (L, t), v in store.items() if t in src_to_tgt}
+        store.clear()
+        store.update(remapped)
+
+    patch = PatchSpec.for_layers_tokens(layers, tgt_pos, comps)
+    return patcher.patched_forward(dict(tgt_inputs), src_cache, patch, mode="online")

@@ -9,25 +9,18 @@ import os
 import pytest
 import torch
 
-from actpatch import (
-    ActivationPatcher,
-    CacheSpec,
-    Component,
-    InternVLAdapter,
-    PatchSpec,
-    image_token_positions,
-    mask_to_token_indices,
-)
+from actpatch import ActivationPatcher, InternVLAdapter
 
 from ._e2e_helpers import (
     APPLE,
     CAT,
     CAT_WORDS,
     PROMPT,
-    centered_grid_mask,
     first_match_rank,
     load_square_image,
+    maybe_enable_debug,
     require_torchvision,
+    run_image_swap,
     top_k_tokens,
 )
 
@@ -60,6 +53,7 @@ def _build_internvl_inputs(processor, image_path: str, device):
 @pytest.mark.slow
 def test_internvl_apple_to_cat_online():
     require_torchvision()
+    maybe_enable_debug()
     from transformers import AutoModelForImageTextToText, AutoProcessor
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -87,39 +81,10 @@ def test_internvl_apple_to_cat_online():
     baseline_topk = top_k_tokens(processor, baseline.logits[0, -1], k=12)
     print("Baseline top-k:", baseline_topk)
 
-    img_id = adapter.get_image_token_id(model)
-    src_img = image_token_positions(src_inputs["input_ids"][0], img_id)
-    tgt_img = image_token_positions(tgt_inputs["input_ids"][0], img_id)
-    assert src_img.numel() == tgt_img.numel()
-
-    grid = adapter.image_grid_shape(tgt_inputs, model)
-    print("Image grid shape:", grid)
-    mask = centered_grid_mask(grid, pad_fraction=0.2)
-    fg_positions_tgt = mask_to_token_indices(mask, tgt_img, grid)
-    fg_positions_src = mask_to_token_indices(mask, src_img, grid)
-
-    layers = list(range(len(adapter.get_decoder_layers(model))))
-
-    src_cache_spec = CacheSpec.for_layers_tokens(
-        layers=layers,
-        tokens=fg_positions_src,
-        components=[Component.RESID_IN, Component.K, Component.V],
-    )
-    src_cache = patcher.cache_source(src_inputs, src_cache_spec)
-
-    src_to_tgt = dict(zip(fg_positions_src, fg_positions_tgt))
-    for store in (src_cache.resid_in, src_cache.k_proj, src_cache.v_proj):
-        remapped = {(L, src_to_tgt[t]): v for (L, t), v in store.items() if t in src_to_tgt}
-        store.clear()
-        store.update(remapped)
-
-    patch = PatchSpec.for_layers_tokens(
-        layers=layers,
-        tokens=fg_positions_tgt,
-        components=[Component.RESID_IN, Component.K, Component.V],
-    )
-
-    out = patcher.patched_forward(dict(tgt_inputs), src_cache, patch, mode="online")
+    # Full image swap: transplant every cat image token into the apple run.
+    # (InternVL reorders tokens via pixel-shuffle, so a subset/foreground mask
+    # would not map to contiguous spatial regions — a full swap is unambiguous.)
+    out = run_image_swap(patcher, adapter, model, src_inputs, tgt_inputs)
     patched_topk = top_k_tokens(processor, out.logits[0, -1], k=12)
     print("Patched top-k:", patched_topk)
 
