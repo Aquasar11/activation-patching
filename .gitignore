@@ -1,4 +1,8 @@
-data/
+# Ignore data/ contents (not the dir itself, so the re-includes below apply)...
+data/*
+# ...but keep the two tiny demo images used by the notebook and e2e tests.
+!data/red_apple.jpeg
+!data/cat.jpeg
 .venv/
 venv/
 __pycache__/

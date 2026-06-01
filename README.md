@@ -20,6 +20,11 @@ model now say "cat"?*
 - Ships adapters for **Qwen2.5-VL** and **InternVL 3.5**. New models are a
   ~40-line adapter — see [Extending to a new model](#extending-to-a-new-model).
 
+> **New here?** Start with the tutorial-style [`docs/GUIDE.md`](docs/GUIDE.md),
+> run the [`examples/`](examples/), or open the visual walkthrough
+> [`notebooks/apple_cat_demo.ipynb`](notebooks/apple_cat_demo.ipynb). This README
+> is the reference.
+
 ---
 
 ## Contents
@@ -471,4 +476,7 @@ src/actpatch/
     internvl.py     InternVL 3.5 adapter
     __init__.py     get_adapter / register_adapter registry
 tests/              unit suite + tests/e2e (apple/cat, opt-in)
+docs/GUIDE.md       tutorial-style user guide (concepts, recipes, troubleshooting)
+examples/           runnable scripts (quickstart.py, offline_demo.py)
+notebooks/          apple_cat_demo.ipynb — visual before/after walkthrough
 ```
